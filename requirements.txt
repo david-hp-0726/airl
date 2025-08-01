@@ -1,0 +1,7 @@
+stable-baselines3
+gymnasium[mujoco]
+imageio[ffmpeg]
+mujoco
+torch
+tqdm
+numpy
