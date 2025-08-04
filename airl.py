@@ -191,25 +191,6 @@ def airl(env_name, n_iters=500):
 
         # ——— 5.4 update policy via REINFORCE ——
         # compute discounted returns
-        length = len(policy_obs)
-        returns = torch.zeros_like(rewards)
-        R = 0
-        # if it == 1:
-        #     print(f"Rewards: {rewards.cpu().numpy()[:-5]}")
-        #     print(f"Returns: {returns.cpu().numpy()[:-5]}")
-        
-        # for i in range(length-1, -1, -1):      # backward
-        #     R = rewards[i] + (1 - dones[i]) * gamma * R
-        #     returns[i] = R
-        #     # if it == 1:
-        #     #     print(f"returns[i] = {returns[i]}, returns[i+1] = {returns[i+1]}, rewards[i] = {rewards[i]}, dones[i] = {dones[i]}")
-        # norm_returns = (returns - returns.mean()) / (returns.std() + 1e-8)
-        # if it == 1:
-        #     print(f"Rewards: {rewards.cpu().numpy()[:-5]}")
-        #     print(f"Returns: {returns.cpu().numpy()[:-5]}")
-        ### This is incorrect since returns are not chronologically ordered and might come from different episodes
-        ### Also, variance could be reduced by subtracting a baseline V
-
         # Update critic
         with torch.no_grad():
              next_values = critic(policy_next)
