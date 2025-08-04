@@ -13,7 +13,7 @@ import torch.nn.functional as F
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # hyperparams
 gamma         = 0.99
-disc_lr       = 1e-4
+disc_lr       = 5e-5
 policy_lr     = 1e-3
 critic_lr     = 1e-3
 disc_batch    = 256
@@ -21,6 +21,7 @@ policy_batch  = 5000    # total timesteps per policy update; should be greater t
 # num_rollouts_per_it = 5
 traj_max_len  = 200     # Pendulum max episode length
 hidden_dim = 256
+disc_decay = 5e-3
 
 def make_env(env_name):
         venv = DummyVecEnv([lambda: gym.make(env_name)])
@@ -109,7 +110,7 @@ def airl(env_name, n_iters=500):
 
     # 4) define AIRL discriminator / reward network
     reward_net = RewardNet(obs_dim, action_dim).to(device)
-    disc_opt    = optim.Adam(reward_net.parameters(), lr=disc_lr, weight_decay=1e-4)
+    disc_opt    = optim.Adam(reward_net.parameters(), lr=disc_lr, weight_decay=disc_decay)
     bce_loss    = nn.BCEWithLogitsLoss()
 
 
