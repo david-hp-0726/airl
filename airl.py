@@ -147,6 +147,7 @@ def airl(env_name, n_iters=500):
         policy_acts  = torch.cat(policy_acts)
         policy_next  = torch.cat(policy_next)
         policy_logp  = torch.cat(logps) # (batch_size, )
+        dones = torch.stack(dones)
         # print(f"policy_obs: {policy_obs.shape}")
         # print(f"policy_act: {policy_acts.shape}")
         # print(f"policy_next: {policy_next.shape}")
@@ -174,6 +175,9 @@ def airl(env_name, n_iters=500):
             loss_p = bce_loss(logits_p, torch.zeros_like(logits_p))
             loss = loss_e + loss_p
 
+            if loss.item() < 0.5:
+                print("Skipping discriminator update")
+                break
             disc_opt.zero_grad()
             loss.backward()
             disc_opt.step()
@@ -194,12 +198,12 @@ def airl(env_name, n_iters=500):
         #     print(f"Rewards: {rewards.cpu().numpy()[:-5]}")
         #     print(f"Returns: {returns.cpu().numpy()[:-5]}")
         
-        for i in range(length-1, -1, -1):      # backward
-            R = rewards[i] + (1 - dones[i]) * gamma * R
-            returns[i] = R
-            # if it == 1:
-            #     print(f"returns[i] = {returns[i]}, returns[i+1] = {returns[i+1]}, rewards[i] = {rewards[i]}, dones[i] = {dones[i]}")
-        returns = (returns - returns.mean()) / (returns.std() + 1e-8)
+        # for i in range(length-1, -1, -1):      # backward
+        #     R = rewards[i] + (1 - dones[i]) * gamma * R
+        #     returns[i] = R
+        #     # if it == 1:
+        #     #     print(f"returns[i] = {returns[i]}, returns[i+1] = {returns[i+1]}, rewards[i] = {rewards[i]}, dones[i] = {dones[i]}")
+        # norm_returns = (returns - returns.mean()) / (returns.std() + 1e-8)
         # if it == 1:
         #     print(f"Rewards: {rewards.cpu().numpy()[:-5]}")
         #     print(f"Returns: {returns.cpu().numpy()[:-5]}")
@@ -207,24 +211,27 @@ def airl(env_name, n_iters=500):
         ### Also, variance could be reduced by subtracting a baseline V
 
         # Update critic
+        with torch.no_grad():
+             next_values = critic(policy_next)
+             td_target = rewards + (1 - dones) * gamma * next_values
         values = critic(policy_obs)
-        # print(f"values: {values.shape}")
-        # print(f"returns: {returns.shape}")
-        critic_loss = F.mse_loss(values, returns)
 
         critic_opt.zero_grad()
+        critic_loss = F.mse_loss(values, td_target)
         critic_loss.backward()
         critic_opt.step()
 
         # Update policy
-        advantages = (returns - values).detach()
+        with torch.no_grad():
+             adv = td_target - critic(policy_obs)
+             adv = (adv - adv.mean()) / (adv.std() + 1e-8)
         # advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
         # advantages *= 10 # Increase policy gradient scale
         policy_opt.zero_grad()
         # loss = −E[ return · log π(a|s) ]
         if it % 5 == 0:
-            print(f"return mean = {returns.mean()} adv mean = {advantages.mean()} logp mean = {policy_logp.mean()}")
-        pg_loss = - (advantages * policy_logp).mean()
+            print(f"values mean = {values.mean()} adv mean = {adv.mean()} logp mean = {policy_logp.mean()}")
+        pg_loss = - (adv * policy_logp).mean()
         pg_loss.backward()
         policy_opt.step()
 
@@ -245,5 +252,5 @@ if __name__ == '__main__':
     parser.add_argument("--env", type=str, required=True, help="Gym environment name (e.g. Ant-v4)")
     parser.add_argument("--nit", type=int)
     args = parser.parse_args()
-    n_iters = args.nit if args.nit is not None else 500
+    n_iters = args.nit if args.nit is not None else 200
     airl(args.env, n_iters=n_iters)
