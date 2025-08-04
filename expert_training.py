@@ -67,11 +67,9 @@ def train_expert(env_name, total_steps, log_dir='logs', model_dir='models'):
     )
     sac.learn(total_steps, callback=[eval_callback])
 
-    sac.save()
-
 
 if __name__ == '__main__':
     env_names = ['Pendulum-v1', 'BipedalWalker-v3', 'HalfCheetah-v4', 'Ant-v4']
-    total_steps = [100_000, 500_000, 1_000_000, 2_000_000]
+    total_steps = [500_000, 500_000, 1_000_000, 2_000_000]
     for i in range(0, len(env_names)):
         train_expert(env_name=env_names[i], total_steps=total_steps[i])
