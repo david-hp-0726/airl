@@ -147,7 +147,7 @@ def airl(env_name, n_iters=500):
         policy_acts  = torch.cat(policy_acts)
         policy_next  = torch.cat(policy_next)
         policy_logp  = torch.cat(logps) # (batch_size, )
-        dones = torch.stack(dones)
+        dones = torch.cat(dones)
         # print(f"policy_obs: {policy_obs.shape}")
         # print(f"policy_act: {policy_acts.shape}")
         # print(f"policy_next: {policy_next.shape}")
@@ -175,7 +175,7 @@ def airl(env_name, n_iters=500):
             loss_p = bce_loss(logits_p, torch.zeros_like(logits_p))
             loss = loss_e + loss_p
 
-            if loss.item() < 0.5:
+            if loss.item() < 0.4:
                 print("Skipping discriminator update")
                 break
             disc_opt.zero_grad()
@@ -220,7 +220,7 @@ def airl(env_name, n_iters=500):
         print(f"[Iter {it}/{n_iters}] Disc loss {loss.item():.3f}   PG loss {pg_loss.item():.3f}    Critic loss {critic_loss.item():.3f}")
 
     # save final policy & reward networks
-    save_dir = os.path.join(env_name)
+    save_dir = os.path.join('airl_models', env_name)
     os.makedirs(save_dir, exist_ok=True)
 
     policy_path = os.path.join(save_dir, "policy.pth")
