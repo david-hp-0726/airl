@@ -122,7 +122,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.env is not None:
-        evaluate_reward(env_name = args.env, plot=args.plot)
+        evaluate_reward(env_name=args.env, plot=args.plot)
     else:
         for env in ['Ant-v4', 'BipedalWalker-v3', 'HalfCheetah-v4', 'Pendulum-v4']:
-            evaluate_reward(env_name = args.env, plot=args.plot)
+            evaluate_reward(env_name=env, plot=args.plot)
