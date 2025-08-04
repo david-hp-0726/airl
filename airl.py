@@ -8,15 +8,19 @@ from torch.utils.data import TensorDataset, DataLoader
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 import argparse
 import os
+import torch.nn.functional as F
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # hyperparams
 gamma         = 0.99
 disc_lr       = 1e-4
-policy_lr     = 1e-4
+policy_lr     = 1e-3
+critic_lr     = 1e-3
 disc_batch    = 256
-policy_batch  = 5000    # total timesteps per policy update
+policy_batch  = 5000    # total timesteps per policy update; should be greater than the 
+# num_rollouts_per_it = 5
 traj_max_len  = 200     # Pendulum max episode length
+hidden_dim = 256
 
 def make_env(env_name):
         venv = DummyVecEnv([lambda: gym.make(env_name)])
@@ -31,15 +35,15 @@ class RewardNet(nn.Module):
             super().__init__()
             # g(s,a)
             self.g = nn.Sequential(
-                nn.Linear(obs_dim + action_dim, 64), nn.ReLU(),
-                nn.Linear(64, 64),                   nn.ReLU(),
-                nn.Linear(64, 1)
+                nn.Linear(obs_dim + action_dim, hidden_dim), nn.ReLU(),
+                nn.Linear(hidden_dim, hidden_dim),                   nn.ReLU(),
+                nn.Linear(hidden_dim, 1)
             )
             # h(s)
             self.h = nn.Sequential(
-                nn.Linear(obs_dim, 64), nn.ReLU(),
-                nn.Linear(64, 64),      nn.ReLU(),
-                nn.Linear(64, 1)
+                nn.Linear(obs_dim, hidden_dim), nn.ReLU(),
+                nn.Linear(hidden_dim, hidden_dim),      nn.ReLU(),
+                nn.Linear(hidden_dim, 1)
             )
 
         def f(self, s, a, s_next):
@@ -52,9 +56,9 @@ class PolicyNet(nn.Module):
         def __init__(self, obs_dim, action_dim):
             super().__init__()
             self.net = nn.Sequential(
-                nn.Linear(obs_dim, 64), nn.Tanh(),
-                nn.Linear(64, 64),      nn.Tanh(),
-                nn.Linear(64, action_dim)
+                nn.Linear(obs_dim, hidden_dim), nn.Tanh(),
+                nn.Linear(hidden_dim, hidden_dim),      nn.Tanh(),
+                nn.Linear(hidden_dim, action_dim)
             )
             # learnable log‐std
             self.log_std = nn.Parameter(torch.zeros(action_dim))
@@ -68,6 +72,20 @@ class PolicyNet(nn.Module):
             mu, std = self(s)
             return Normal(mu, std)
 
+class ValueNet(nn.Module):
+    def __init__(self, obs_dim):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(obs_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, 1)
+        )
+
+    def forward(self, obs):
+        return self.net(obs).squeeze(-1) # (batch_size, )
+
 def airl(env_name, n_iters=500):
     # 1) load expert data (assumes you saved arrays 'obs','acts','next_obs')
     data = np.load(f"data/{env_name}/expert_data.npz")
@@ -77,20 +95,23 @@ def airl(env_name, n_iters=500):
     expert_dataset  = TensorDataset(expert_obs, expert_acts, expert_next_obs)
     expert_loader   = DataLoader(expert_dataset, batch_size=disc_batch, shuffle=True)
 
-    # 2) make Pendulum-v1 env with the same VecNormalize wrapper
+    # 2) make env with the same VecNormalize wrapper
     env = make_env(env_name)
 
     obs_dim    = env.observation_space.shape[0]
     action_dim = env.action_space.shape[0]
 
-    # 3) define policy network (Gaussian REINFORCE)
+    # 3) define policy network (REINFORCE) and value network
     policy = PolicyNet(obs_dim, action_dim).to(device)
     policy_opt = optim.Adam(policy.parameters(), lr=policy_lr)
+    critic = ValueNet(obs_dim).to(device)
+    critic_opt = optim.Adam(critic.parameters(), lr=critic_lr)
 
     # 4) define AIRL discriminator / reward network
     reward_net = RewardNet(obs_dim, action_dim).to(device)
-    disc_opt    = optim.Adam(reward_net.parameters(), lr=disc_lr)
+    disc_opt    = optim.Adam(reward_net.parameters(), lr=disc_lr, weight_decay=1e-4)
     bce_loss    = nn.BCEWithLogitsLoss()
+
 
     # helper: compute D(s,a,s') = sigmoid( f(s,a,s') - log π(a|s) )
     def discriminator(s, a, s_next):
@@ -102,23 +123,33 @@ def airl(env_name, n_iters=500):
 
     # 5) training loop
     for it in range(1, n_iters+1):
-        # ——— 5.1 collect policy data ——
-        policy_obs, policy_acts, policy_next, logps = [], [], [], []
-        s = env.reset()
-        for _ in range(policy_batch):
-            s_tensor = torch.from_numpy(s).float().to(device)
-            dist = policy.get_dist(s_tensor)
-            a = dist.sample()
-            next_s, _, done, _ = env.step(a.cpu().numpy())
-            policy_obs.append(s_tensor)
-            policy_acts.append(a)
-            policy_next.append(torch.from_numpy(next_s).float().to(device))
-            logps.append(dist.log_prob(a).sum(-1))
-            s = next_s if not done else env.reset()
-        policy_obs   = torch.stack(policy_obs)
-        policy_acts  = torch.stack(policy_acts)
-        policy_next  = torch.stack(policy_next)
-        policy_logp  = torch.stack(logps)
+        # ——— 5.1 collect policy data —— 
+        policy_obs, policy_acts, policy_next, logps, dones = [], [], [], [], []
+        while len(policy_obs) < policy_batch:
+            obs = env.reset()
+            done = False
+            while not done:
+                obs_tensor = torch.from_numpy(obs).float().to(device)
+                dist = policy.get_dist(obs_tensor)
+                action = dist.sample()
+                next_obs, _, done, _ = env.step(action.cpu().numpy())
+                policy_obs.append(obs_tensor)
+                policy_acts.append(action)
+                policy_next.append(torch.from_numpy(next_obs).float().to(device))
+                logps.append(dist.log_prob(action).sum(-1))
+                dones.append(torch.tensor(done, dtype=torch.float32, device=device))
+                obs = next_obs if not done else env.reset()
+                
+                if len(policy_obs) >= policy_batch:
+                     break
+        policy_obs   = torch.cat(policy_obs) # (batch_size, obs_dim)
+        policy_acts  = torch.cat(policy_acts)
+        policy_next  = torch.cat(policy_next)
+        policy_logp  = torch.cat(logps) # (batch_size, )
+        # print(f"policy_obs: {policy_obs.shape}")
+        # print(f"policy_act: {policy_acts.shape}")
+        # print(f"policy_next: {policy_next.shape}")
+        # print(f"policy_logp: {policy_logp.shape}")
 
         # ——— 5.2 train discriminator ——
         # we’ll take one pass over expert_loader and a matching
@@ -151,25 +182,53 @@ def airl(env_name, n_iters=500):
             logit_p, Dp = discriminator(policy_obs, policy_acts, policy_next)
             # r = log D − log (1−D) = logit_p
             rewards = logit_p.detach()
+            rewards = rewards.squeeze(-1)
 
         # ——— 5.4 update policy via REINFORCE ——
         # compute discounted returns
-        returns = []
+        length = len(policy_obs)
+        returns = torch.zeros_like(rewards)
         R = 0
-        for r in rewards.flip(0):      # backward
-            R = r + gamma * R
-            returns.insert(0, R)
-        returns = torch.stack(returns)
+        # if it == 1:
+        #     print(f"Rewards: {rewards.cpu().numpy()[:-5]}")
+        #     print(f"Returns: {returns.cpu().numpy()[:-5]}")
+        
+        for i in range(length-1, -1, -1):      # backward
+            R = rewards[i] + (1 - dones[i]) * gamma * R
+            returns[i] = R
+            # if it == 1:
+            #     print(f"returns[i] = {returns[i]}, returns[i+1] = {returns[i+1]}, rewards[i] = {rewards[i]}, dones[i] = {dones[i]}")
+        returns = (returns - returns.mean()) / (returns.std() + 1e-8)
+        # if it == 1:
+        #     print(f"Rewards: {rewards.cpu().numpy()[:-5]}")
+        #     print(f"Returns: {returns.cpu().numpy()[:-5]}")
+        ### This is incorrect since returns are not chronologically ordered and might come from different episodes
+        ### Also, variance could be reduced by subtracting a baseline V
 
+        # Update critic
+        values = critic(policy_obs)
+        # print(f"values: {values.shape}")
+        # print(f"returns: {returns.shape}")
+        critic_loss = F.mse_loss(values, returns)
+
+        critic_opt.zero_grad()
+        critic_loss.backward()
+        critic_opt.step()
+
+        # Update policy
+        advantages = (returns - values).detach()
+        # advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+        # advantages *= 10 # Increase policy gradient scale
         policy_opt.zero_grad()
         # loss = −E[ return · log π(a|s) ]
-        print(f"return = {returns.mean()}")
-        print(f"logp = {policy_logp.mean()}")
-        pg_loss = - (returns * policy_logp).mean()
+        if it % 5 == 0:
+            print(f"return mean = {returns.mean()} adv mean = {advantages.mean()} logp mean = {policy_logp.mean()}")
+        pg_loss = - (advantages * policy_logp).mean()
         pg_loss.backward()
         policy_opt.step()
 
-        print(f"[Iter {it}/{n_iters}] Disc loss {loss.item():.3f}   PG loss {pg_loss.item():.3f}")
+
+        print(f"[Iter {it}/{n_iters}] Disc loss {loss.item():.3f}   PG loss {pg_loss.item():.3f}    Critic loss {critic_loss.item():.3f}")
 
     # save final policy & reward networks
     save_dir = os.path.join(env_name)
