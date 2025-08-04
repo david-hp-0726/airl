@@ -21,7 +21,8 @@ policy_batch  = 5000    # total timesteps per policy update; should be greater t
 # num_rollouts_per_it = 5
 traj_max_len  = 200     # Pendulum max episode length
 hidden_dim = 256
-disc_decay = 5e-3
+disc_decay = 1e-4
+
 
 def make_env(env_name):
         venv = DummyVecEnv([lambda: gym.make(env_name)])
@@ -87,7 +88,14 @@ class ValueNet(nn.Module):
     def forward(self, obs):
         return self.net(obs).squeeze(-1) # (batch_size, )
 
-def airl(env_name, n_iters=500):
+def airl(env_name, n_iters=100):
+    # 0) initialize training stats dict
+    stats = {
+        'pg_loss': [],
+        'disc_loss': [],
+        'critic_loss': []
+    }
+
     # 1) load expert data (assumes you saved arrays 'obs','acts','next_obs')
     data = np.load(f"data/{env_name}/expert_data.npz")
     expert_obs      = torch.from_numpy(data["obs"     ]).float().to(device)
@@ -175,9 +183,9 @@ def airl(env_name, n_iters=500):
             loss_p = bce_loss(logits_p, torch.zeros_like(logits_p))
             loss = loss_e + loss_p
 
-            if loss.item() < 0.4:
-                print("Skipping discriminator update")
-                break
+            # if loss.item() < 0.1:
+            #     print("Skipping discriminator update")
+            #     break
             disc_opt.zero_grad()
             loss.backward()
             disc_opt.step()
@@ -186,8 +194,8 @@ def airl(env_name, n_iters=500):
         with torch.no_grad():
             logit_p, Dp = discriminator(policy_obs, policy_acts, policy_next)
             # r = log D − log (1−D) = logit_p
-            rewards = logit_p.detach()
-            rewards = rewards.squeeze(-1)
+            rewards = (logit_p - logit_p.mean()) / (logit_p.std() + 1e-8)
+            rewards = rewards.detach()
 
         # ——— 5.4 update policy via REINFORCE ——
         # compute discounted returns
@@ -218,6 +226,10 @@ def airl(env_name, n_iters=500):
 
 
         print(f"[Iter {it}/{n_iters}] Disc loss {loss.item():.3f}   PG loss {pg_loss.item():.3f}    Critic loss {critic_loss.item():.3f}")
+        stats['disc_loss'].append(loss.item())
+        stats['pg_loss'].append(pg_loss.item())
+        stats['critic_loss'].append(critic_loss.item())
+
 
     # save final policy & reward networks
     save_dir = os.path.join('airl_models', env_name)
@@ -228,10 +240,20 @@ def airl(env_name, n_iters=500):
     torch.save(policy.state_dict(),      policy_path)
     torch.save(reward_net.state_dict(),   reward_path)
 
+    # save stats
+    stats_path = os.path.join(save_dir, "train_stats.npz")
+    np.savez(stats_path, **{k: np.array(v) for k,v in stats.items()})
+    print(f"Saved training stats to {stats_path}")
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("--env", type=str, required=True, help="Gym environment name (e.g. Ant-v4)")
-    parser.add_argument("--nit", type=int)
+    parser.add_argument("--env", type=str, required=False, help="Gym environment name (e.g. Ant-v4)")
+    parser.add_argument("--nit", type=int, required=False, help="#Training iterations")
     args = parser.parse_args()
-    n_iters = args.nit if args.nit is not None else 200
-    airl(args.env, n_iters=n_iters)
+
+    n_iters = args.nit if args.nit is not None else 100
+    if args.env is not None:
+        airl(args.env , n_iters=n_iters)
+    else:
+        for env in ['Ant-v4', 'BipedalWalker-v3', 'HalfCheetah-v4', 'Pendulum-v1']:
+             airl(env, n_iters=n_iters)
