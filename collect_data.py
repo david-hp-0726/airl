@@ -3,6 +3,7 @@ import numpy as np
 from stable_baselines3 import SAC
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 from tqdm import tqdm
+import os
 
 def make_vec_env(vec_path: str, env_name: str):
     """
@@ -19,7 +20,6 @@ def make_vec_env(vec_path: str, env_name: str):
 def collect_expert_data(
     env_name: str,
     n_episodes: int = 100,
-    output_path: str = "expert_pendulum.npz",
     verbose: bool = False
 ):
     """
@@ -28,6 +28,8 @@ def collect_expert_data(
     """
     model_path = f"models/{env_name}/best_model.zip"
     vec_path = f"models/{env_name}/vec_normalize.pkl"
+    output_path = f"data/{env_name}/expert_data.npz"
+    os.makedirs(os.path.join(f"data/{env_name}"), exist_ok=True)
 
     # load env and expert
     env = make_vec_env(vec_path, env_name)
@@ -79,15 +81,11 @@ if __name__ == "__main__":
         "--episodes", type=int, default=100,
         help="number of expert episodes to roll out"
     )
-    parser.add_argument(
-        "--output", type=str, default="expert_pendulum.npz",
-        help="file path to save collected transitions"
-    )
     parser.add_argument("--verbose", action='store_true')
+
     args = parser.parse_args()
     collect_expert_data(
         env_name=args.env,
         n_episodes=args.episodes,
-        output_path=args.output,
         verbose=args.verbose
     )
