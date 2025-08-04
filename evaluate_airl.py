@@ -40,8 +40,6 @@ def evaluate_airl_policy(policy_path, vecnormalize_path, env_id, num_episodes=10
                 action = policy(obs_tensor)[0].numpy()
             obs, reward, done, _ = venv.step(action)
             total_reward += reward[0]
-            if render:
-                venv.render()
 
         episode_rewards.append(total_reward)
 
@@ -55,7 +53,7 @@ def evaluate_airl_policy(policy_path, vecnormalize_path, env_id, num_episodes=10
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--env', type=str, required=True)
-    args = parser.parse_args
+    args = parser.parse_args()
 
     policy_path = f'airl_models/{args.env}/policy.pth'
     vecnormalize_path = f'models/{args.env}/vec_normalize.pkl'
@@ -64,6 +62,5 @@ if __name__ == '__main__':
         policy_path=policy_path,
         vecnormalize_path=vecnormalize_path,
         env_id=args.env,
-        num_episodes=10,
-        render=False
+        num_episodes=10
     )
