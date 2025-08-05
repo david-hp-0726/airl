@@ -41,8 +41,8 @@ The following plots show the training losses (discriminator, policy, critic) ove
 - **Pendulum-v1**  
   ![Pendulum-v1 Losses](graphs/Pendulum-v1-losses.png)
 
-- **Swimmer-v4**  
-  ![Swimmer-v4 Losses](graphs/Swimmer-v4-losses.png)
+- **BipedalWalker-v3**  
+  ![BipedalWalker-v3 Losses](graphs/BipedalWalker-v3-losses.png)
 
 - **HalfCheetah-v4**  
   ![HalfCheetah-v4 Losses](graphs/HalfCheetah-v4-losses.png)
