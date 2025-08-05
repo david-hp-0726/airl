@@ -22,3 +22,56 @@ In this project, the **Adversarial Inverse Reinforcement Learning (AIRL)** metho
    On the policy side, optimize a stochastic policy $\pi_\omega(a \mid s)$ using the Actor-Critic algorithm to maximize the objective function $E_{\pi_\omega}[\nabla_\omega \log{\pi(a|s)}\cdot\hat{A}(s,a)]$. The policy uses:
    - **Actor**: a 2-layer MLP with 256 hidden units (tanh activations) to learn action means and log standard deviation.
    - **Critic**: a learnable value function $V_\psi(s)$ (same architecture) trained using the TD method.
+
+## Expert Performances
+The following plots show the evaluation reward over time of the expert agents over the training process.
+- **Ant-v4**
+  ![Ant-v4](graphs/Ant-v4.png)
+- **BipedalWalker-v3**
+  ![BipedalWalker-v3](graphs/BipedalWalker-v3.png)
+- **HalfCheetah-v4**
+  ![HalfCheetah-v4](graphs/HalfCheetah-v4.png)
+- **Pendulum-v1**
+  ![Pendulum-v1](graphs/Pendulum-v1.png)
+
+## AIRL Training Results
+
+The following plots show the training losses (discriminator, policy, critic) over time for each environment:
+
+- **Pendulum-v1**  
+  ![Pendulum-v1 Losses](graphs/Pendulum-v1-losses.png)
+
+- **Swimmer-v4**  
+  ![Swimmer-v4 Losses](graphs/Swimmer-v4-losses.png)
+
+- **HalfCheetah-v4**  
+  ![HalfCheetah-v4 Losses](graphs/HalfCheetah-v4-losses.png)
+
+- **Ant-v4**  
+  ![Ant-v4 Losses](graphs/Ant-v4-losses.png)
+
+---
+
+### Performance Statistics
+
+**Learned Reward Applied on Expert Policy and Random Policy (100 episodes)**
+
+| Environment     | Expert Policy (mean ± std)     | Random Policy (mean ± std)      |
+|-----------------|-------------------------------|----------------------------------|
+| Ant-v4          | 185.4601 ± 97.3083            | -1885.2660 ± 1217.9503          |
+| BipedalWalker-v3| 5390.8529 ± 158.5101          | -23215.3559 ± 20534.6100        |
+| HalfCheetah-v4  | 1918.4880 ± 64.7931           | -19138.9772 ± 5351.9988         |
+| Pendulum-v1     | -900.4427 ± 34.3473           | -1703.4608 ± 60.2416            |
+
+---
+
+**Learned Policy Performance on the Ground-truth Reward (10 episodes)**
+
+| Environment     | Learned Policy (mean ± std)   | Random Policy (mean ± std)      |
+|-----------------|-------------------------------|----------------------------------|
+| Ant-v4          | -3352.62 ± 1144.61            | -81.19 ± 123.55                 |
+| BipedalWalker-v3| -84.54 ± 6.04                 | -98.30 ± 11.72                  |
+| HalfCheetah-v4  | -187.54 ± 0.75                | -268.55 ± 60.59                 |
+| Pendulum-v1     | -389.09 ± 313.56              | -1330.67 ± 295.00               |
+
+It's interesting to note that while the learned reward function for Pendulum-v1 is the only function that does not achieve a positive mean reward on the expert, the learned policy for Pendulum v1 notably outperforms the random policy.
