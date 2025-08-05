@@ -52,7 +52,7 @@ The following plots show the training losses (discriminator, policy, critic) ove
 
 ---
 
-### Performance Statistics
+### AIRL Performance Statistics
 
 **Learned Reward Applied on Expert Policy and Random Policy (100 episodes)**
 
