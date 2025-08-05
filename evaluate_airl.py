@@ -10,10 +10,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def evaluate_airl_policy(policy_path, vecnormalize_path, env_id, num_episodes=10):
     # Step 1: Load environment
-    def make_env():
-        return gym.make(env_id)
-
-    venv = DummyVecEnv([make_env])
+    venv = DummyVecEnv([lambda: gym.make(env_id)])
     
     # Step 2: Load VecNormalize
     venv = VecNormalize.load(vecnormalize_path, venv)
@@ -27,7 +24,7 @@ def evaluate_airl_policy(policy_path, vecnormalize_path, env_id, num_episodes=10
     policy.load_state_dict(torch.load(policy_path, map_location=device))
     policy.eval()
 
-    episode_rewards=[]
+    policy_rewards=[]
 
     for _ in range(num_episodes):
         obs = venv.reset()
@@ -41,26 +38,48 @@ def evaluate_airl_policy(policy_path, vecnormalize_path, env_id, num_episodes=10
             obs, reward, done, _ = venv.step(action)
             total_reward += reward[0]
 
-        episode_rewards.append(total_reward)
+        policy_rewards.append(total_reward)
 
-    mean_reward = np.mean(episode_rewards)
-    std_reward = np.std(episode_rewards)
+    mean = np.mean(policy_rewards)
+    std = np.std(policy_rewards)
 
-    print(f"Evaluated over {num_episodes} episodes — Mean reward: {mean_reward:.2f}, Std: {std_reward:.2f}")
-    return mean_reward, std_reward
+    print(f"Learned policy mean reward (over {num_episodes} episodes): {mean:.2f}, Std: {std:.2f}")
+
+    random_rewards = []
+
+    for _ in range(num_episodes):
+        obs = venv.reset()
+        done = False
+        total_reward = 0.0
+
+        while not done:
+            action = np.array([venv.action_space.sample()])
+            obs, reward, done, _ = venv.step(action)
+            total_reward += reward
+
+        random_rewards.append(total_reward)
+    
+    mean = np.mean(random_rewards)
+    std = np.std(random_rewards)
+
+    print(f"Random policy mean reward (over {num_episodes} episodes): {mean:.2f}, Std: {std:.2f}")
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--env', type=str, required=True)
+    parser.add_argument('--env', type=str, required=False)
     args = parser.parse_args()
 
-    policy_path = f'airl_models/{args.env}/policy.pth'
-    vecnormalize_path = f'models/{args.env}/vec_normalize.pkl'
+    envs = [args.env] if args.env is not None else ['Ant-v4', 'BipedalWalker-v3', 'HalfCheetah-v4', 'Pendulum-v1']
 
-    evaluate_airl_policy(
-        policy_path=policy_path,
-        vecnormalize_path=vecnormalize_path,
-        env_id=args.env,
-        num_episodes=10
-    )
+    for env in envs:
+        policy_path = f'airl_models/{env}/policy.pth'
+        vecnormalize_path = f'models/{env}/vec_normalize.pkl'
+
+        evaluate_airl_policy(
+            policy_path=policy_path,
+            vecnormalize_path=vecnormalize_path,
+            env_id=env,
+            num_episodes=10
+        )
+   

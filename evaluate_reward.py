@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 
 from airl import RewardNet, make_env, device, gamma  # your AIRL definitions
 
-def plot_results(stats_path, exp_rewards, rand_rewards, env_name):
+def plot_results(stats_path, exp_rewards, rand_rewards, env_id):
     stats = np.load(stats_path)
     disc_loss   = stats["disc_loss"]
     pg_loss     = stats["pg_loss"]
@@ -21,18 +21,18 @@ def plot_results(stats_path, exp_rewards, rand_rewards, env_name):
     plt.plot(critic_loss, label="Critic")
     plt.xlabel("Iteration")
     plt.ylabel("Loss")
-    plt.title(f"{env_name} AIRL Training Losses")
+    plt.title(f"{env_id} AIRL Training Losses")
     plt.legend()
     plt.tight_layout()
 
-    save_path = os.path.join("graphs", f"{env_name}-losses.png")
+    save_path = os.path.join("graphs", f"{env_id}-losses.png")
     plt.savefig(save_path)
 
     plt.show()
 
 
 def evaluate_reward(
-    env_name: str,
+    env_id: str,
     plot: bool,
     num_expert_eps: int = 10,
     num_random_eps: int = 10,
@@ -40,15 +40,15 @@ def evaluate_reward(
 ):
     # ——————————————
     # 1) hard-coded paths
-    base       = f"models/{env_name}"
-    reward_path = f"airl_models/{env_name}/reward.pth"
+    base       = f"models/{env_id}"
+    reward_path = f"airl_models/{env_id}/reward.pth"
     expert_zip  = f"{base}/best_model.zip"
     vec_path    = f"{base}/vec_normalize.pkl"
-    stats_path  = f"airl_models/{env_name}/train_stats.npz"
+    stats_path  = f"airl_models/{env_id}/train_stats.npz"
 
     # ——————————————
     # 2) load AIRL reward net
-    env_norm = make_env(env_name)
+    env_norm = make_env(env_id)
     obs_dim  = env_norm.observation_space.shape[0]
     act_dim  = env_norm.action_space.shape[0]
 
@@ -66,7 +66,7 @@ def evaluate_reward(
 
     # ——————————————
     # 3) load expert policy + VecNormalize
-    expert_env = DummyVecEnv([lambda: gym.make(env_name)])
+    expert_env = DummyVecEnv([lambda: gym.make(env_id)])
     expert_env = VecNormalize.load(vec_path, expert_env)
     expert_env.training    = False
     expert_env.norm_reward = False
@@ -88,6 +88,7 @@ def evaluate_reward(
                 break
         exp_rewards.append(total)
 
+    print(env_id)
     print(f"Expert-policy: {np.mean(exp_rewards):.4f} ± {np.std(exp_rewards):.4f}")
 
     # ——————————————
@@ -111,7 +112,7 @@ def evaluate_reward(
     # ——————————————
     # 6) generate all plots
     if plot:
-        plot_results(stats_path, exp_rewards, rand_rewards, env_name)
+        plot_results(stats_path, exp_rewards, rand_rewards, env_id)
 
 
 if __name__ == "__main__":
@@ -122,7 +123,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.env is not None:
-        evaluate_reward(env_name=args.env, plot=args.plot)
+        evaluate_reward(env_id=args.env, plot=args.plot)
     else:
-        for env in ['Ant-v4', 'BipedalWalker-v3', 'HalfCheetah-v4', 'Pendulum-v4']:
-            evaluate_reward(env_name=env, plot=args.plot)
+        for env in ['Ant-v4', 'BipedalWalker-v3', 'HalfCheetah-v4', 'Pendulum-v1']:
+            evaluate_reward(env_id=env, plot=args.plot)
